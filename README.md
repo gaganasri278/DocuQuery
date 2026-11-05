@@ -106,6 +106,7 @@ DocuQuery AI decouples document processing, semantic embeddings, vector indexing
 | **Document Processing** | PyMuPDF (`fitz`), python-docx |
 | **Vector DB & Retrieval** | ChromaDB (Persistent), Sentence Transformers (`all-MiniLM-L6-v2`), PyTorch |
 | **Relational Database** | SQLite (Metadata, conversations, messages, citations) |
+| **Deployment** | Docker (Multi-stage), Render Blueprint (`render.yaml`) |
 | **Testing** | Pytest, FastAPI TestClient |
 
 ---
@@ -114,6 +115,10 @@ DocuQuery AI decouples document processing, semantic embeddings, vector indexing
 
 ```
 document-qa-system/
+│
+├── Dockerfile                          # Multi-stage production container build
+├── .dockerignore                       # Docker build exclusions
+├── render.yaml                         # Render Blueprint specification
 │
 ├── backend/
 │   ├── app/
@@ -190,7 +195,42 @@ document-qa-system/
 
 ---
 
-## Getting Started
+## Deployment on Render
+
+DocuQuery AI is fully containerized and pre-configured for public deployment on **Render** using a multi-stage Docker build.
+
+### Deploying via Render Dashboard (Recommended)
+
+1. Log into your [Render Dashboard](https://dashboard.render.com/).
+2. Click **New +** and select **Web Service**.
+3. Connect your GitHub repository (`https://github.com/gaganasri278/DocuQuery`).
+4. Configure the service settings:
+   - **Name**: `docuquery` (or your preferred name)
+   - **Runtime**: **Docker**
+   - **Plan**: **Free**
+   - **Health Check Path**: `/api/health`
+5. Under **Environment Variables**, you can optionally configure:
+   - `LLM_PROVIDER`: `local` (default, no API keys needed), or `gemini`, or `openai`.
+   - `GEMINI_API_KEY`: *(Optional)* Your Google Gemini API key if using Gemini.
+   - `OPENAI_API_KEY`: *(Optional)* Your OpenAI API key if using OpenAI.
+6. Click **Deploy Web Service**. Render will automatically build the React frontend, package the Python FastAPI backend, cache the embedding model, and deploy the application.
+
+### Deploying via Render Blueprint
+
+You can also use the included [`render.yaml`](render.yaml) file:
+1. In the Render Dashboard, click **New +** > **Blueprint**.
+2. Select the `DocuQuery` repository.
+3. Render will read `render.yaml` and configure the web service, Dockerfile path, and health checks automatically.
+
+### Important Storage Persistence Limitations on Render (Free Plan)
+
+- **Ephemeral Filesystem**: Render's **Free Tier** uses an ephemeral container filesystem. Any documents uploaded to `/app/data/uploads`, SQLite conversation histories stored in `/app/data/qa_system.db`, and ChromaDB vector indices stored in `/app/data/chroma_db` will reset when the service spins down after 15 minutes of inactivity or when redeployed.
+- **Persistent Disks**: To retain uploaded documents and embeddings across container restarts and sleep cycles, Render requires a paid plan (Starter or higher) with a **Persistent Disk** mounted to `/data` and setting the environment variable `DATA_DIR=/data`.
+- **Bundled Benchmark Documents**: Even on the Free plan, users can click the **"Load Samples"** button inside the Document Library to instantly reload the bundled PDF, DOCX, and TXT benchmark files into the vector database in seconds.
+
+---
+
+## Getting Started Locally
 
 ### 1. Prerequisites
 - **Python 3.11+**

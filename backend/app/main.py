@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -33,22 +34,44 @@ app.include_router(settings_router)
 
 @app.get("/api/health")
 def health():
+    """Health check endpoint for Render / Docker orchestration."""
     return {"status": "healthy"}
 
-# Serve frontend production build if available
-frontend_dist = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
-if frontend_dist.exists():
-    app.mount("/assets", StaticFiles(directory=str(frontend_dist / "assets")), name="assets")
+# Determine frontend static directory (supports local dev and container paths)
+frontend_dist = None
+env_dist = os.getenv("FRONTEND_DIST_DIR")
+if env_dist and Path(env_dist).is_dir():
+    frontend_dist = Path(env_dist)
+else:
+    candidates = [
+        Path(__file__).resolve().parent.parent.parent / "frontend" / "dist",
+        Path(__file__).resolve().parent.parent / "frontend" / "dist",
+        Path("/app/frontend/dist"),
+        Path("./frontend/dist"),
+    ]
+    for c in candidates:
+        if c.is_dir():
+            frontend_dist = c
+            break
+
+if frontend_dist:
+    assets_dir = frontend_dist / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
 
     @app.get("/{full_path:path}")
     def serve_spa(full_path: str):
-        # Serve exact file if exists in dist (e.g. favicon.svg)
-        target = frontend_dist / full_path
-        if target.is_file():
-            return FileResponse(target)
-        # Otherwise fallback to index.html for SPA client-side routing
-        return FileResponse(frontend_dist / "index.html")
+        if full_path:
+            target = frontend_dist / full_path
+            if target.is_file():
+                return FileResponse(target)
+        index_file = frontend_dist / "index.html"
+        if index_file.is_file():
+            return FileResponse(index_file)
+        return {"status": "online", "message": "DocuQuery AI Backend Ready"}
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run("app.main:app", host="127.0.0.1", port=8000, reload=True)
+    port = int(os.getenv("PORT", 8000))
+    host = os.getenv("HOST", "0.0.0.0")
+    uvicorn.run("app.main:app", host=host, port=port, reload=False)

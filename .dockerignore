@@ -1,0 +1,31 @@
+.git
+.gitignore
+.dockerignore
+.env
+.env.*
+*.md
+LICENSE
+
+# Node / Frontend
+node_modules
+frontend/node_modules
+frontend/dist
+frontend/.vite
+
+# Python / Backend
+backend/.pytest_cache
+backend/__pycache__
+**/__pycache__
+*.py[cod]
+*$py.class
+backend/data/*.db
+backend/data/uploads/*
+backend/data/chroma_db/*
+!backend/data/uploads/.gitkeep
+!backend/data/chroma_db/.gitkeep
+
+# IDEs & System
+.vscode
+.idea
+.DS_Store
+Thumbs.db
