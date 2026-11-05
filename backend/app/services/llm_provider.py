@@ -25,6 +25,9 @@ class LLMProvider:
     def __init__(self):
         pass
 
+    def _get_gemini_key(self) -> str:
+        return settings.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
+
     def generate_answer(
         self,
         question: str,

@@ -4,12 +4,18 @@ import { ChatArea } from './components/ChatArea';
 import { DocumentDrawer } from './components/DocumentDrawer';
 import { CitationModal } from './components/CitationModal';
 import { SettingsModal } from './components/SettingsModal';
+import { DashboardView } from './components/DashboardView';
+import { StudyAssistantView } from './components/StudyAssistantView';
+import { WritingAssistantView } from './components/WritingAssistantView';
+import { DocumentPreviewModal } from './components/DocumentPreviewModal';
+import { DocumentIntelligenceModal } from './components/DocumentIntelligenceModal';
 import {
   DocumentItem,
   ConversationSummary,
   ChatMessage,
   CitationItem,
-  SystemSettings
+  SystemSettings,
+  ActiveTab
 } from './types';
 import { api } from './services/api';
 
@@ -20,6 +26,9 @@ export const App: React.FC = () => {
     if (saved) return saved === 'dark';
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
   });
+
+  // Top-level Navigation Tab ('chat' | 'study' | 'writing' | 'dashboard' | 'library')
+  const [activeTab, setActiveTab] = useState<ActiveTab>('chat');
 
   // Data states
   const [conversations, setConversations] = useState<ConversationSummary[]>([]);
@@ -37,6 +46,8 @@ export const App: React.FC = () => {
   const [isDocDrawerOpen, setIsDocDrawerOpen] = useState<boolean>(false);
   const [isSettingsOpen, setIsSettingsOpen] = useState<boolean>(false);
   const [selectedCitation, setSelectedCitation] = useState<CitationItem | null>(null);
+  const [previewDocId, setPreviewDocId] = useState<string | null>(null);
+  const [intelligenceDocId, setIntelligenceDocId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
 
@@ -90,23 +101,6 @@ export const App: React.FC = () => {
     }
   };
 
-  const handleReindexDocument = async (docId: string) => {
-    setIsUploading(true);
-    try {
-      await api.reindexDocument(docId);
-      const [updatedDocs, s] = await Promise.all([
-        api.listDocuments(),
-        api.getSettings()
-      ]);
-      setDocuments(updatedDocs);
-      setSystemSettings(s);
-    } catch (err: any) {
-      alert(`Re-indexing failed: ${err.message || 'Unknown error'}`);
-    } finally {
-      setIsUploading(false);
-    }
-  };
-
   const loadConversation = async (convId: string) => {
     setActiveConvId(convId);
     try {
@@ -147,6 +141,45 @@ export const App: React.FC = () => {
       }
     } catch (err) {
       console.error('Failed to delete conversation:', err);
+    }
+  };
+
+  const handleTogglePinConversation = async (id: string, currentPinned: boolean, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      await api.updateConversation(id, { is_pinned: !currentPinned });
+      const updatedList = await api.listConversations();
+      setConversations(updatedList);
+    } catch (err) {
+      console.error('Failed to toggle pin:', err);
+    }
+  };
+
+  const handleRenameConversation = async (id: string, newTitle: string) => {
+    try {
+      await api.updateConversation(id, { title: newTitle });
+      const updatedList = await api.listConversations();
+      setConversations(updatedList);
+    } catch (err) {
+      console.error('Failed to rename conversation:', err);
+    }
+  };
+
+  const handleExportConversation = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    try {
+      const text = await api.exportConversation(id);
+      const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `DocuQuery_Conversation_${id.slice(0, 8)}.txt`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      alert(`Export failed: ${err.message}`);
     }
   };
 
@@ -211,11 +244,10 @@ export const App: React.FC = () => {
   const handleUploadFiles = async (files: File[]) => {
     setIsUploading(true);
     try {
-      const newDocs = await api.uploadDocuments(files);
+      await api.uploadDocuments(files);
       const updatedList = await api.listDocuments();
       setDocuments(updatedList);
 
-      // Refresh system settings stats
       const s = await api.getSettings();
       setSystemSettings(s);
     } catch (err: any) {
@@ -253,6 +285,23 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleReindexDocument = async (docId: string) => {
+    setIsUploading(true);
+    try {
+      await api.reindexDocument(docId);
+      const [updatedDocs, s] = await Promise.all([
+        api.listDocuments(),
+        api.getSettings()
+      ]);
+      setDocuments(updatedDocs);
+      setSystemSettings(s);
+    } catch (err: any) {
+      alert(`Re-indexing failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
   const handleToggleDocFilter = (docId: string) => {
     setSelectedDocIds(prev =>
       prev.includes(docId) ? prev.filter(id => id !== docId) : [...prev, docId]
@@ -270,6 +319,9 @@ export const App: React.FC = () => {
         onSelectConversation={handleSelectConversation}
         onNewChat={handleNewChat}
         onDeleteConversation={handleDeleteConversation}
+        onTogglePinConversation={handleTogglePinConversation}
+        onRenameConversation={handleRenameConversation}
+        onExportConversation={handleExportConversation}
         onOpenDocuments={() => setIsDocDrawerOpen(true)}
         onOpenSettings={() => setIsSettingsOpen(true)}
         docCount={documents.length}
@@ -277,22 +329,54 @@ export const App: React.FC = () => {
         onToggleDarkMode={() => setDarkMode(!darkMode)}
         chatMode={chatMode}
         onModeChange={handleModeChange}
+        activeTab={activeTab}
+        onTabChange={(tab) => {
+          if (tab === 'library') {
+            setIsDocDrawerOpen(true);
+          } else {
+            setActiveTab(tab);
+          }
+        }}
       />
 
-      {/* Main Chat Interface */}
-      <ChatArea
-        messages={messages}
-        isLoading={isLoading}
-        onSendMessage={handleSendMessage}
-        onClearChat={handleClearChat}
-        onSelectCitation={(cit) => setSelectedCitation(cit)}
-        selectedDocCount={selectedDocIds.length}
-        totalDocCount={documents.length}
-        onOpenDocuments={() => setIsDocDrawerOpen(true)}
-        activeConvTitle={activeConv ? activeConv.title : 'New Chat'}
-        chatMode={chatMode}
-        onModeChange={handleModeChange}
-      />
+      {/* Main View Router */}
+      {activeTab === 'chat' && (
+        <ChatArea
+          messages={messages}
+          isLoading={isLoading}
+          onSendMessage={handleSendMessage}
+          onClearChat={handleClearChat}
+          onSelectCitation={(cit) => setSelectedCitation(cit)}
+          selectedDocCount={selectedDocIds.length}
+          totalDocCount={documents.length}
+          onOpenDocuments={() => setIsDocDrawerOpen(true)}
+          activeConvTitle={activeConv ? activeConv.title : 'New Chat'}
+          chatMode={chatMode}
+          onModeChange={handleModeChange}
+          onStopGeneration={() => setIsLoading(false)}
+        />
+      )}
+
+      {activeTab === 'study' && (
+        <StudyAssistantView documents={documents} />
+      )}
+
+      {activeTab === 'writing' && (
+        <WritingAssistantView />
+      )}
+
+      {activeTab === 'dashboard' && (
+        <DashboardView
+          onNavigateToTab={(tab) => {
+            if (tab === 'library') {
+              setIsDocDrawerOpen(true);
+            } else {
+              setActiveTab(tab);
+            }
+          }}
+          onOpenDocuments={() => setIsDocDrawerOpen(true)}
+        />
+      )}
 
       {/* Document Management Drawer */}
       <DocumentDrawer
@@ -307,7 +391,24 @@ export const App: React.FC = () => {
         onLoadSamples={handleLoadSamples}
         onDeleteDocument={handleDeleteDocument}
         onReindexDocument={handleReindexDocument}
+        onPreviewDocument={(docId) => setPreviewDocId(docId)}
+        onOpenIntelligence={(docId) => setIntelligenceDocId(docId)}
         isUploading={isUploading}
+      />
+
+      {/* Document Page-by-Page Preview Modal */}
+      <DocumentPreviewModal
+        documentId={previewDocId}
+        isOpen={!!previewDocId}
+        onClose={() => setPreviewDocId(null)}
+      />
+
+      {/* Document Intelligence Modal */}
+      <DocumentIntelligenceModal
+        documentId={intelligenceDocId}
+        isOpen={!!intelligenceDocId}
+        onClose={() => setIntelligenceDocId(null)}
+        allDocuments={documents}
       />
 
       {/* Citation Inspector Modal */}

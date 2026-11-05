@@ -9,10 +9,18 @@ import {
   Trash2,
   FileText,
   AlertCircle,
-  HelpCircle,
-  Info
+  Copy,
+  Check,
+  RotateCcw,
+  Edit2,
+  Mic,
+  MicOff,
+  Volume2,
+  VolumeX,
+  Square
 } from 'lucide-react';
-import { ChatMessage, CitationItem, DocumentItem } from '../types';
+import { ChatMessage, CitationItem } from '../types';
+import { MarkdownRenderer } from './MarkdownRenderer';
 
 interface ChatAreaProps {
   messages: ChatMessage[];
@@ -26,6 +34,7 @@ interface ChatAreaProps {
   activeConvTitle: string;
   chatMode: 'document_qa' | 'general_chat';
   onModeChange: (mode: 'document_qa' | 'general_chat') => void;
+  onStopGeneration?: () => void;
 }
 
 export const ChatArea: React.FC<ChatAreaProps> = ({
@@ -40,10 +49,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   activeConvTitle,
   chatMode,
   onModeChange,
+  onStopGeneration,
 }) => {
   const [input, setInput] = useState('');
+  const [copiedMsgId, setCopiedMsgId] = useState<string | null>(null);
+  const [speakingMsgId, setSpeakingMsgId] = useState<string | null>(null);
+  const [isListening, setIsListening] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const recognitionRef = useRef<any>(null);
 
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -52,6 +66,15 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
   useEffect(() => {
     scrollToBottom();
   }, [messages, isLoading]);
+
+  // Clean up speech synthesis when unmounting or switching chats
+  useEffect(() => {
+    return () => {
+      if ('speechSynthesis' in window) {
+        window.speechSynthesis.cancel();
+      }
+    };
+  }, []);
 
   const handleSubmit = (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -76,11 +99,116 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
     e.target.style.height = `${Math.min(e.target.scrollHeight, 160)}px`;
   };
 
-  const suggestedQuestions = [
+  const handleCopyMessage = (msgId: string, text: string) => {
+    navigator.clipboard.writeText(text);
+    setCopiedMsgId(msgId);
+    setTimeout(() => setCopiedMsgId(null), 2000);
+  };
+
+  const handleEditPrompt = (text: string) => {
+    setInput(text);
+    if (textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  };
+
+  const handleRegenerate = () => {
+    // Find the last user message to re-trigger
+    const userMsgs = messages.filter(m => m.role === 'user');
+    if (userMsgs.length > 0) {
+      const lastUserMsg = userMsgs[userMsgs.length - 1];
+      onSendMessage(lastUserMsg.content);
+    }
+  };
+
+  // Text-To-Speech (AI Playback)
+  const handleToggleSpeech = (msgId: string, text: string) => {
+    if (!('speechSynthesis' in window)) {
+      alert('Speech Synthesis is not supported in your browser.');
+      return;
+    }
+
+    if (speakingMsgId === msgId) {
+      window.speechSynthesis.cancel();
+      setSpeakingMsgId(null);
+      return;
+    }
+
+    window.speechSynthesis.cancel();
+    const cleanText = text.replace(/[*#`_$\|]/g, '').trim();
+    const utterance = new SpeechSynthesisUtterance(cleanText);
+    utterance.rate = 1.0;
+    utterance.pitch = 1.0;
+
+    utterance.onend = () => setSpeakingMsgId(null);
+    utterance.onerror = () => setSpeakingMsgId(null);
+
+    setSpeakingMsgId(msgId);
+    window.speechSynthesis.speak(utterance);
+  };
+
+  // Speech-To-Text (Microphone Input)
+  const handleToggleMic = () => {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert('Speech Recognition is not supported in this browser. Please use Chrome.');
+      return;
+    }
+
+    if (isListening) {
+      if (recognitionRef.current) {
+        recognitionRef.current.stop();
+      }
+      setIsListening(false);
+      return;
+    }
+
+    try {
+      const recognition = new SpeechRecognition();
+      recognition.continuous = false;
+      recognition.interimResults = false;
+      recognition.lang = 'en-US';
+
+      recognition.onstart = () => {
+        setIsListening(true);
+      };
+
+      recognition.onresult = (event: any) => {
+        const transcript = event.results[0][0].transcript;
+        setInput(prev => (prev ? `${prev} ${transcript}` : transcript));
+      };
+
+      recognition.onerror = (event: any) => {
+        console.error('Speech recognition error:', event.error);
+        setIsListening(false);
+      };
+
+      recognition.onend = () => {
+        setIsListening(false);
+      };
+
+      recognitionRef.current = recognition;
+      recognition.start();
+    } catch (err) {
+      console.error('Failed to start speech recognition:', err);
+      setIsListening(false);
+    }
+  };
+
+  const suggestedDocQuestions = [
     "What is the main objective or executive summary?",
     "Explain the methodology or key approaches used.",
     "What are the key findings, statistics, or SLA metrics?",
     "Summarize the technical architecture or requirements.",
+  ];
+
+  const suggestedGeneralQuestions = [
+    "What is the difference between SQL JOIN and UNION?",
+    "Explain Retrieval-Augmented Generation in simple terms.",
+    "How do database primary keys and foreign keys interact?",
+    "Write a Python function to parse JSON safely."
   ];
 
   return (
@@ -168,8 +296,8 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             </h2>
             <p className="text-sm text-slate-500 dark:text-slate-400 mb-8 leading-relaxed">
               {chatMode === 'general_chat'
-                ? 'Ask open-ended questions, programming problems, concept explanations, or general knowledge powered directly by your configured LLM.'
-                : 'Every answer is retrieved semantically from your indexed PDF, DOCX, and TXT files with precise source citations. If an answer cannot be found in the documents, the system will explicitly state so.'}
+                ? 'Ask open-ended questions, programming problems, concept explanations, or general knowledge powered directly by Google Gemini.'
+                : 'Every answer is retrieved semantically from your indexed PDF, DOCX, and TXT files with verified citations. If an answer cannot be found in the documents, the system will explicitly state so.'}
             </p>
 
             {chatMode === 'document_qa' && totalDocCount === 0 ? (
@@ -192,15 +320,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   {chatMode === 'general_chat' ? 'Sample Questions:' : 'Suggested Document Questions:'}
                 </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-left">
-                  {(chatMode === 'general_chat'
-                    ? [
-                        'What is the difference between SQL JOIN and UNION?',
-                        'Explain Retrieval-Augmented Generation in simple terms.',
-                        'How do database primary keys and foreign keys interact?',
-                        'Write a Python function to parse JSON safely.'
-                      ]
-                    : suggestedQuestions
-                  ).map((q, idx) => (
+                  {(chatMode === 'general_chat' ? suggestedGeneralQuestions : suggestedDocQuestions).map((q, idx) => (
                     <button
                       key={idx}
                       onClick={() => onSendMessage(q)}
@@ -215,10 +335,11 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
           </div>
         ) : (
           <div className="max-w-3xl mx-auto space-y-6">
-            {messages.map((m) => {
+            {messages.map((m, mIdx) => {
               const isUser = m.role === 'user';
               const isGeneral = m.mode === 'general_chat';
               const isNotFound = m.content.includes("Answer not found in the uploaded documents.");
+              const isLatestAssistant = !isUser && mIdx === messages.length - 1;
 
               return (
                 <div
@@ -238,7 +359,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                   )}
 
                   <div className={`space-y-2 max-w-2xl ${isUser ? 'items-end' : 'items-start'}`}>
-                    {/* Mode Tag for Assistant */}
+                    {/* Header Tag for Assistant */}
                     {!isUser && (
                       <div className="flex items-center space-x-1.5 text-[11px] font-medium text-slate-400 px-1">
                         {isGeneral ? (
@@ -253,7 +374,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                       </div>
                     )}
 
-                    {/* Chat Bubble */}
+                    {/* Chat Bubble with Rich Markdown Formatting */}
                     <div
                       className={`p-4 rounded-2xl text-sm leading-relaxed shadow-sm ${
                         isUser
@@ -265,8 +386,86 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                           : 'bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 text-slate-800 dark:text-slate-200 rounded-bl-none'
                       }`}
                     >
-                      <div className="whitespace-pre-wrap">{m.content}</div>
+                      {isUser ? (
+                        <div className="whitespace-pre-wrap">{m.content}</div>
+                      ) : (
+                        <MarkdownRenderer content={m.content} />
+                      )}
                     </div>
+
+                    {/* Assistant Message Actions Toolbar */}
+                    {!isUser && (
+                      <div className="flex items-center space-x-2 px-1 text-xs text-slate-400">
+                        {/* Copy Response */}
+                        <button
+                          onClick={() => handleCopyMessage(m.id, m.content)}
+                          className="hover:text-slate-600 dark:hover:text-slate-200 flex items-center gap-1 transition"
+                          title="Copy response"
+                        >
+                          {copiedMsgId === m.id ? (
+                            <>
+                              <Check className="w-3.5 h-3.5 text-emerald-500" />
+                              <span className="text-emerald-500 text-[11px]">Copied</span>
+                            </>
+                          ) : (
+                            <>
+                              <Copy className="w-3.5 h-3.5" />
+                              <span className="text-[11px]">Copy</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Read Aloud / Stop Voice Playback */}
+                        <button
+                          onClick={() => handleToggleSpeech(m.id, m.content)}
+                          className={`flex items-center gap-1 transition ${
+                            speakingMsgId === m.id
+                              ? 'text-indigo-600 dark:text-indigo-400 font-semibold'
+                              : 'hover:text-slate-600 dark:hover:text-slate-200'
+                          }`}
+                          title={speakingMsgId === m.id ? 'Stop reading' : 'Read aloud with text-to-speech'}
+                        >
+                          {speakingMsgId === m.id ? (
+                            <>
+                              <VolumeX className="w-3.5 h-3.5" />
+                              <span className="text-[11px]">Stop</span>
+                            </>
+                          ) : (
+                            <>
+                              <Volume2 className="w-3.5 h-3.5" />
+                              <span className="text-[11px]">Listen</span>
+                            </>
+                          )}
+                        </button>
+
+                        {/* Regenerate on latest response */}
+                        {isLatestAssistant && (
+                          <button
+                            onClick={handleRegenerate}
+                            disabled={isLoading}
+                            className="hover:text-slate-600 dark:hover:text-slate-200 flex items-center gap-1 transition"
+                            title="Regenerate answer"
+                          >
+                            <RotateCcw className="w-3.5 h-3.5" />
+                            <span className="text-[11px]">Regenerate</span>
+                          </button>
+                        )}
+                      </div>
+                    )}
+
+                    {/* User Prompt Actions */}
+                    {isUser && (
+                      <div className="flex justify-end px-1 text-xs text-slate-400">
+                        <button
+                          onClick={() => handleEditPrompt(m.content)}
+                          className="hover:text-slate-600 dark:hover:text-slate-200 flex items-center gap-1 transition text-[11px]"
+                          title="Edit this prompt"
+                        >
+                          <Edit2 className="w-3 h-3" />
+                          <span>Edit Prompt</span>
+                        </button>
+                      </div>
+                    )}
 
                     {/* Source Citations Tray (Only in Document QA mode) */}
                     {!isUser && !isGeneral && m.citations && m.citations.length > 0 && (
@@ -315,7 +514,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
               );
             })}
 
-            {/* Loading Indicator */}
+            {/* Loading Indicator with Stop Generation Option */}
             {isLoading && (
               <div className="flex space-x-3 items-center justify-start animate-in fade-in duration-200">
                 <div className={`w-8 h-8 rounded-xl text-white flex items-center justify-center flex-shrink-0 shadow-sm ${
@@ -325,13 +524,22 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
                 }`}>
                   {chatMode === 'general_chat' ? <Sparkles className="w-4 h-4" /> : <Bot className="w-4 h-4" />}
                 </div>
-                <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 text-xs flex items-center space-x-2.5 shadow-sm rounded-bl-none">
+                <div className="p-3.5 rounded-2xl bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 text-slate-500 text-xs flex items-center space-x-3 shadow-sm rounded-bl-none">
                   <Loader2 className="w-4 h-4 text-indigo-600 animate-spin" />
                   <span>
                     {chatMode === 'general_chat'
-                      ? 'Generating response using configured LLM...'
+                      ? 'Generating response with Google Gemini...'
                       : 'Retrieving semantic passages & synthesizing answer...'}
                   </span>
+                  {onStopGeneration && (
+                    <button
+                      onClick={onStopGeneration}
+                      className="ml-2 px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 flex items-center gap-1"
+                    >
+                      <Square className="w-3 h-3 fill-rose-600" />
+                      <span>Stop</span>
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -340,7 +548,7 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
         )}
       </div>
 
-      {/* Input Bar */}
+      {/* Input Bar with Voice Microphone and Controls */}
       <footer className="p-4 md:px-8 border-t border-slate-200/80 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-sm">
         <form onSubmit={handleSubmit} className="max-w-3xl mx-auto relative flex items-center">
           <textarea
@@ -350,33 +558,58 @@ export const ChatArea: React.FC<ChatAreaProps> = ({
             onChange={handleTextareaInput}
             onKeyDown={handleKeyDown}
             placeholder={
-              chatMode === 'general_chat'
-                ? 'Ask any general question (e.g., Explain SQL joins or explain RAG architectures)...'
+              isListening
+                ? 'Listening to speech... Speak clearly into your microphone'
+                : chatMode === 'general_chat'
+                ? 'Ask any general question (e.g. Explain SQL joins or explain RAG architectures)...'
                 : totalDocCount === 0
                 ? 'Please upload documents first...'
-                : 'Ask a question about the uploaded documents (e.g., What tables are created?)...'
+                : 'Ask a question about the uploaded documents (e.g. What tables are created?)...'
             }
-            className="w-full resize-none py-3.5 pl-4 pr-14 rounded-2xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/90 text-slate-900 dark:text-slate-100 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition shadow-sm leading-normal max-h-40"
+            className={`w-full resize-none py-3.5 pl-4 pr-24 rounded-2xl border bg-white dark:bg-slate-800/90 text-slate-900 dark:text-slate-100 placeholder-slate-400 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition shadow-sm leading-normal max-h-40 ${
+              isListening
+                ? 'border-rose-400 ring-2 ring-rose-400/20'
+                : 'border-slate-200 dark:border-slate-700'
+            }`}
           />
 
-          <button
-            type="submit"
-            disabled={!input.trim() || isLoading}
-            className={`absolute right-2.5 p-2 rounded-xl text-white transition shadow-sm disabled:cursor-not-allowed ${
-              chatMode === 'general_chat'
-                ? 'bg-violet-600 hover:bg-violet-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400'
-                : 'bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400'
-            }`}
-            title="Send question (Enter)"
-          >
-            {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-          </button>
+          {/* Right Input Buttons: Mic & Send */}
+          <div className="absolute right-2.5 flex items-center space-x-1.5">
+            {/* Voice Input Button */}
+            <button
+              type="button"
+              onClick={handleToggleMic}
+              className={`p-2 rounded-xl transition ${
+                isListening
+                  ? 'bg-rose-500 text-white animate-pulse'
+                  : 'text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800'
+              }`}
+              title={isListening ? 'Click to stop recording' : 'Speech-to-text microphone input'}
+            >
+              {isListening ? <MicOff className="w-4 h-4" /> : <Mic className="w-4 h-4" />}
+            </button>
+
+            {/* Send Button */}
+            <button
+              type="submit"
+              disabled={!input.trim() || isLoading}
+              className={`p-2 rounded-xl text-white transition shadow-sm disabled:cursor-not-allowed ${
+                chatMode === 'general_chat'
+                  ? 'bg-violet-600 hover:bg-violet-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400'
+                  : 'bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-200 dark:disabled:bg-slate-800 disabled:text-slate-400'
+              }`}
+              title="Send question (Enter)"
+            >
+              {isLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+            </button>
+          </div>
         </form>
+
         <div className="max-w-3xl mx-auto flex items-center justify-between mt-2 px-1 text-[11px] text-slate-400">
           <span>Press <kbd className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-mono text-[10px]">Enter</kbd> to send, <kbd className="px-1 py-0.5 rounded bg-slate-200 dark:bg-slate-800 font-mono text-[10px]">Shift+Enter</kbd> for newline</span>
           <span>
             {chatMode === 'general_chat'
-              ? 'General AI mode • Powered by configured LLM'
+              ? 'General AI mode • Powered by Google Gemini'
               : 'Document QA mode • Answers strictly grounded on retrieved sources with citations'}
           </span>
         </div>

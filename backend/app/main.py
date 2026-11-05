@@ -6,7 +6,17 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from app.config import settings
 from app.database.connection import init_db
-from app.routes import documents_router, conversations_router, chat_router, settings_router
+from app.routes import (
+    documents_router,
+    conversations_router,
+    chat_router,
+    settings_router,
+    document_intelligence_router,
+    study_router,
+    writing_router,
+    preferences_router,
+    dashboard_router
+)
 
 # Initialize SQLite database schema
 init_db()
@@ -31,6 +41,11 @@ app.include_router(documents_router)
 app.include_router(conversations_router)
 app.include_router(chat_router)
 app.include_router(settings_router)
+app.include_router(document_intelligence_router)
+app.include_router(study_router)
+app.include_router(writing_router)
+app.include_router(preferences_router)
+app.include_router(dashboard_router)
 
 @app.get("/api/health")
 def health():

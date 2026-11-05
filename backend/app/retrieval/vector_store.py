@@ -132,6 +132,27 @@ class VectorStore:
 
         return retrieved
 
+    def get_by_document(self, doc_id: str) -> List[Dict[str, Any]]:
+        """Retrieves all indexed chunks for a given document."""
+        try:
+            results = self.collection.get(
+                where={"doc_id": doc_id},
+                include=["documents", "metadatas"]
+            )
+            chunks = []
+            docs = results.get("documents", []) or []
+            metas = results.get("metadatas", []) or []
+            ids = results.get("ids", []) or []
+            for i in range(len(ids)):
+                chunks.append({
+                    "id": ids[i],
+                    "text": docs[i] if i < len(docs) else "",
+                    "metadata": metas[i] if i < len(metas) and metas[i] else {}
+                })
+            return chunks
+        except Exception:
+            return []
+
     def count(self) -> int:
         return self.collection.count()
 

@@ -45,9 +45,13 @@ def init_db():
             )
         """)
 
-        # Migration: ensure mode column exists in pre-existing tables
+        # Migration: ensure mode and is_pinned columns exist in pre-existing tables
         try:
             cursor.execute("ALTER TABLE conversations ADD COLUMN mode TEXT DEFAULT 'document_qa'")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN is_pinned INTEGER DEFAULT 0")
         except Exception:
             pass
         try:
@@ -70,6 +74,33 @@ def init_db():
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (message_id) REFERENCES messages(id) ON DELETE CASCADE,
                 FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE SET NULL
+            )
+        """)
+
+        # User preferences table
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS user_preferences (
+                id TEXT PRIMARY KEY,
+                response_length TEXT DEFAULT 'balanced',
+                response_style TEXT DEFAULT 'balanced',
+                tone TEXT DEFAULT 'friendly',
+                theme TEXT DEFAULT 'system',
+                voice_enabled INTEGER DEFAULT 1,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )
+        """)
+
+        # Study sets table (MCQs, Flashcards, Summaries)
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS study_sets (
+                id TEXT PRIMARY KEY,
+                document_id TEXT,
+                document_name TEXT,
+                set_type TEXT NOT NULL,
+                title TEXT NOT NULL,
+                data_json TEXT NOT NULL,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (document_id) REFERENCES documents(id) ON DELETE CASCADE
             )
         """)
         

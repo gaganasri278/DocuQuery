@@ -3,7 +3,16 @@ import {
   ConversationSummary,
   ConversationDetail,
   ChatMessage,
-  SystemSettings
+  SystemSettings,
+  DocumentSummary,
+  DocumentCompareResult,
+  DocumentPreview,
+  MCQItem,
+  FlashcardItem,
+  StudySet,
+  WritingResult,
+  UserPreferences,
+  DashboardStats
 } from '../types';
 
 const API_BASE = '/api';
@@ -54,10 +63,38 @@ export const api = {
     return res.json();
   },
 
+  // Document Intelligence
+  async getDocumentPreview(docId: string): Promise<DocumentPreview> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/preview`);
+    if (!res.ok) throw new Error('Failed to load document preview');
+    return res.json();
+  },
+
+  async summarizeDocument(docId: string): Promise<DocumentSummary> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/summarize`, {
+      method: 'POST'
+    });
+    if (!res.ok) throw new Error('Failed to generate document summary');
+    return res.json();
+  },
+
+  async compareDocuments(documentIds: string[]): Promise<DocumentCompareResult> {
+    const res = await fetch(`${API_BASE}/documents/compare`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ document_ids: documentIds })
+    });
+    if (!res.ok) throw new Error('Failed to compare documents');
+    return res.json();
+  },
+
   // Conversations
-  async listConversations(mode?: 'document_qa' | 'general_chat'): Promise<ConversationSummary[]> {
-    const url = mode ? `${API_BASE}/conversations?mode=${mode}` : `${API_BASE}/conversations`;
-    const res = await fetch(url);
+  async listConversations(mode?: 'document_qa' | 'general_chat', search?: string): Promise<ConversationSummary[]> {
+    const params = new URLSearchParams();
+    if (mode) params.append('mode', mode);
+    if (search) params.append('search', search);
+    const queryString = params.toString() ? `?${params.toString()}` : '';
+    const res = await fetch(`${API_BASE}/conversations${queryString}`);
     if (!res.ok) throw new Error('Failed to load conversations');
     return res.json();
   },
@@ -72,6 +109,16 @@ export const api = {
     return res.json();
   },
 
+  async updateConversation(id: string, data: { title?: string; is_pinned?: boolean }): Promise<ConversationSummary> {
+    const res = await fetch(`${API_BASE}/conversations/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) throw new Error('Failed to update conversation');
+    return res.json();
+  },
+
   async getConversation(id: string): Promise<ConversationDetail> {
     const res = await fetch(`${API_BASE}/conversations/${id}`);
     if (!res.ok) throw new Error('Failed to load conversation details');
@@ -83,6 +130,12 @@ export const api = {
       method: 'DELETE',
     });
     if (!res.ok) throw new Error('Failed to delete conversation');
+  },
+
+  async exportConversation(id: string): Promise<string> {
+    const res = await fetch(`${API_BASE}/conversations/${id}/export`);
+    if (!res.ok) throw new Error('Failed to export conversation');
+    return res.text();
   },
 
   // Chat
@@ -129,6 +182,82 @@ export const api = {
       const err = await res.json().catch(() => ({ detail: 'Failed to send message' }));
       throw new Error(err.detail || 'Failed to send message');
     }
+    return res.json();
+  },
+
+  // Study Assistant
+  async generateMCQs(documentId: string, difficulty: string = 'medium', count: number = 5): Promise<MCQItem[]> {
+    const res = await fetch(`${API_BASE}/study/mcq`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ document_id: documentId, difficulty, count })
+    });
+    if (!res.ok) throw new Error('Failed to generate MCQs');
+    return res.json();
+  },
+
+  async generateFlashcards(documentId: string, count: number = 6): Promise<FlashcardItem[]> {
+    const res = await fetch(`${API_BASE}/study/flashcards`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ document_id: documentId, count })
+    });
+    if (!res.ok) throw new Error('Failed to generate flashcards');
+    return res.json();
+  },
+
+  async explainConcept(concept: string, level: string = 'beginner', documentId?: string): Promise<{ concept: string; level: string; explanation: string }> {
+    const res = await fetch(`${API_BASE}/study/explain`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ concept, level, document_id: documentId })
+    });
+    if (!res.ok) throw new Error('Failed to explain concept');
+    return res.json();
+  },
+
+  async listStudySets(): Promise<StudySet[]> {
+    const res = await fetch(`${API_BASE}/study/sets`);
+    if (!res.ok) throw new Error('Failed to load study sets');
+    return res.json();
+  },
+
+  // Writing Assistant
+  async processWriting(data: {
+    text: string;
+    operation: string;
+    tone?: string;
+    target_length?: string;
+  }): Promise<WritingResult> {
+    const res = await fetch(`${API_BASE}/writing/process`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error('Failed to process writing task');
+    return res.json();
+  },
+
+  // Dashboard & Preferences
+  async getDashboardStats(): Promise<DashboardStats> {
+    const res = await fetch(`${API_BASE}/dashboard/stats`);
+    if (!res.ok) throw new Error('Failed to load dashboard statistics');
+    return res.json();
+  },
+
+  async getPreferences(): Promise<UserPreferences> {
+    const res = await fetch(`${API_BASE}/preferences`);
+    if (!res.ok) throw new Error('Failed to load user preferences');
+    return res.json();
+  },
+
+  async updatePreferences(data: Partial<UserPreferences>): Promise<UserPreferences> {
+    const res = await fetch(`${API_BASE}/preferences`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data)
+    });
+    if (!res.ok) throw new Error('Failed to save preferences');
     return res.json();
   },
 
