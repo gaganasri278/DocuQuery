@@ -89,11 +89,41 @@ DocuQuery AI decouples document processing, semantic embeddings, vector indexing
    - Ability to create new chats, switch between previous discussions, and delete chats.
    - Follow-up questions maintain conversational thread without allowing historical assumptions to introduce ungrounded facts.
 
-6. **Modern, Responsive UI/UX**:
-   - Inspired by Perplexity, NotebookLM, and ChatGPT.
-   - Clean chat bubbles, typing indicators, quick suggested prompts.
-   - Document drawer with multi-file drag-and-drop, real-time chunk indicators, and query-scoping filters.
-   - Dark and Light mode toggle persisted across sessions.
+6. **Smart Chat Management**:
+   - Real-time search across all previous conversations.
+   - Intelligent date grouping: **📌 Pinned**, **Today**, **Yesterday**, **Previous 7 Days**, and **Older**.
+   - Pin important conversations to keep them at the top.
+   - Inline conversation renaming and deletion with confirmation.
+   - Export conversations as structured `.txt` transcripts with timestamps, message roles, and source citations.
+   - Separate, dedicated histories for Document QA and General AI Chat.
+
+7. **Advanced Document Intelligence**:
+   - **Executive Summarization**: Synthesizes multi-paragraph summaries of entire documents.
+   - **Key Takeaways**: Automatically extracts 5–8 high-yield bulleted takeaways.
+   - **Definitions & Terminology Glossary**: Builds structured domain glossaries.
+   - **Chapter Revision Notes**: Produces clean Markdown notes for studying.
+   - **Multi-Document Comparison**: Selects 2+ documents to generate comparative synthesis, similarities, and differences side by side.
+   - **Document Previewer**: In-app document reader with in-document keyword search and excerpt copying.
+
+8. **AI Study Assistant**:
+   - **Interactive MCQ Quiz**: Customizable difficulty (Easy/Medium/Hard) with instant scoring, green/red option feedback, and pedagogical explanations.
+   - **Interactive 3D Flip Flashcards**: Revision cards with CSS 3D flip animation, carousel navigation, and card counter.
+   - **Concept Simplifier ("Explain like I'm 5")**: Demystifies technical concepts tailored for Beginner, Intermediate, or Advanced learners.
+
+9. **AI Writing Assistant**:
+   - Dual-pane workspace with live word counters.
+   - One-click actions: *Rewrite & Polish*, *Fix Grammar & Typos*, *Simplify (Plain English)*, *Summarize Text*, *Draft Email*, *Executive Business Report*.
+   - Tone controls (Professional, Friendly, Academic, Technical, Persuasive, Concise) and target lengths (Concise, Balanced, Detailed).
+
+10. **Voice Interaction & Smart Controls**:
+    - **Speech-to-Text**: Microphone button using Web Speech API with pulsing recording animation that transcribes voice into text.
+    - **Text-to-Speech**: Speaker button with Play, Pause, and Stop controls using browser speech synthesis.
+    - **Message Controls**: Copy response, regenerate response, edit previous user prompts, stop active generation.
+    - **Rich Markdown Engine**: Syntax-highlighted code blocks with copy-code buttons, responsive tables, and KaTeX math formulas.
+
+11. **Analytics Dashboard & Personalization**:
+    - Live metrics tracking Total Documents, Vector Chunks, Total Conversations, Active AI Model (`gemini-3.8-flash`), and Recent Activity Feed.
+    - Customizable response length, response style (Standard / Bullet Points / Step-by-Step / Academic), and theme (Light / Dark / System).
 
 ---
 
@@ -143,13 +173,21 @@ document-qa-system/
 │   │   ├── routes/
 │   │   │   ├── __init__.py
 │   │   │   ├── documents.py            # Document upload, delete, list endpoints
-│   │   │   ├── conversations.py        # Conversation sessions management
-│   │   │   ├── chat.py                 # RAG QA endpoint
+│   │   │   ├── conversations.py        # Conversation sessions management & export
+│   │   │   ├── chat.py                 # RAG Document QA & General AI endpoints
+│   │   │   ├── document_intelligence.py# Summarize, key points, definitions, compare
+│   │   │   ├── study.py                # MCQ quizzes, flashcards, concept explainer
+│   │   │   ├── writing.py              # Text polish, grammar, tones, reports, emails
+│   │   │   ├── dashboard.py            # Live platform analytics
+│   │   │   ├── preferences.py          # User personalization preferences
 │   │   │   └── settings.py             # System & AI provider settings
 │   │   └── services/
 │   │       ├── __init__.py
 │   │       ├── document_service.py     # Document lifecycle & indexing
 │   │       ├── conversation_service.py # Chat history & message persistence
+│   │       ├── document_intelligence.py# Summarization & comparison service
+│   │       ├── study_service.py        # MCQ & flashcard generator service
+│   │       ├── writing_service.py      # Writing transformations service
 │   │       ├── llm_provider.py         # Gemini, OpenAI, Ollama, & Local engine
 │   │       └── rag_service.py          # Complete RAG pipeline orchestrator
 │   │
@@ -169,11 +207,17 @@ document-qa-system/
 ├── frontend/
 │   ├── src/
 │   │   ├── components/
-│   │   │   ├── Sidebar.tsx             # History, new chat, theme toggle
-│   │   │   ├── ChatArea.tsx            # Messages, citations, input bar
+│   │   │   ├── Sidebar.tsx             # History, search, pin/rename, export
+│   │   │   ├── ChatArea.tsx            # Rich markdown, citations, mic & speaker
+│   │   │   ├── DashboardView.tsx       # Live platform metrics & quick actions
+│   │   │   ├── StudyAssistantView.tsx  # MCQ quizzes, 3D flashcards, explainer
+│   │   │   ├── WritingAssistantView.tsx# Dual-pane text editor & tone switcher
 │   │   │   ├── DocumentDrawer.tsx      # Upload dropzone & document list
+│   │   │   ├── DocumentPreviewModal.tsx# In-app document reader & keyword search
+│   │   │   ├── DocumentIntelligenceModal.tsx # Summary, key points, compare
+│   │   │   ├── MarkdownRenderer.tsx    # Code highlighting, tables, KaTeX math
 │   │   │   ├── CitationModal.tsx       # Verified excerpt inspector
-│   │   │   └── SettingsModal.tsx       # AI Provider & key configuration
+│   │   │   └── SettingsModal.tsx       # AI Provider, keys & personalization
 │   │   ├── services/
 │   │   │   └── api.ts                  # Typed API client
 │   │   ├── types/
