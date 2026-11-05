@@ -49,18 +49,26 @@ class LLMProvider:
             elif openai_key:
                 provider = "openai"
 
-        if provider == "gemini" and gemini_key:
-            try:
-                return self._call_gemini(question, retrieved_passages, conversation_history, gemini_key)
-            except Exception as e:
-                print(f"[LLM Warning] Gemini call failed ({e}), falling back to extractive engine.")
+        if provider == "gemini":
+            if gemini_key:
+                try:
+                    return self._call_gemini(question, retrieved_passages, conversation_history, gemini_key)
+                except Exception as e:
+                    print(f"[LLM Warning] Gemini call failed ({e}), falling back to extractive engine.")
+                    return self._local_extractive_answer(question, retrieved_passages)
+            else:
+                print("[LLM Info] Gemini provider active but GEMINI_API_KEY is not set. Using local high-precision extractive engine.")
                 return self._local_extractive_answer(question, retrieved_passages)
 
-        elif provider == "openai" and openai_key:
-            try:
-                return self._call_openai(question, retrieved_passages, conversation_history, openai_key)
-            except Exception as e:
-                print(f"[LLM Warning] OpenAI call failed ({e}), falling back to extractive engine.")
+        elif provider == "openai":
+            if openai_key:
+                try:
+                    return self._call_openai(question, retrieved_passages, conversation_history, openai_key)
+                except Exception as e:
+                    print(f"[LLM Warning] OpenAI call failed ({e}), falling back to extractive engine.")
+                    return self._local_extractive_answer(question, retrieved_passages)
+            else:
+                print("[LLM Info] OpenAI provider active but OPENAI_API_KEY is not set. Using local high-precision extractive engine.")
                 return self._local_extractive_answer(question, retrieved_passages)
 
         elif provider == "ollama":
@@ -72,6 +80,67 @@ class LLMProvider:
 
         # Default local high-precision extractive engine
         return self._local_extractive_answer(question, retrieved_passages)
+
+    def generate_general_chat_answer(
+        self,
+        question: str,
+        conversation_history: List[Dict[str, str]] = []
+    ) -> str:
+        """
+        MODE 2: General AI Chat
+        Answers general knowledge, coding, or conversational questions directly using LLM
+        without searching uploaded documents.
+        """
+        provider = settings.llm_provider.lower()
+        gemini_key = settings.gemini_api_key or os.getenv("GEMINI_API_KEY", "")
+        openai_key = settings.openai_api_key or os.getenv("OPENAI_API_KEY", "")
+
+        if provider == "local":
+            if gemini_key:
+                provider = "gemini"
+            elif openai_key:
+                provider = "openai"
+
+        if provider == "gemini":
+            if gemini_key:
+                try:
+                    return self._call_gemini_general(question, conversation_history, gemini_key)
+                except Exception as e:
+                    return f"[Gemini Error]: Unable to complete request ({str(e)}). Please verify your GEMINI_API_KEY."
+            else:
+                return (
+                    "You are currently in **General AI Chat** mode.\n\n"
+                    "To generate open-ended answers using Google Gemini, please add your **GEMINI_API_KEY** in the "
+                    "**Model & Settings** menu (gear icon at the bottom of the sidebar) or inside your `.env` file.\n\n"
+                    "*Tip: To search within your uploaded files, toggle to **Document QA** mode above.*"
+                )
+
+        elif provider == "openai":
+            if openai_key:
+                try:
+                    return self._call_openai_general(question, conversation_history, openai_key)
+                except Exception as e:
+                    return f"[OpenAI Error]: Unable to complete request ({str(e)})."
+            else:
+                return (
+                    "You are currently in **General AI Chat** mode.\n\n"
+                    "Please configure your **OPENAI_API_KEY** in **Model & Settings** or your `.env` file."
+                )
+
+        elif provider == "ollama":
+            try:
+                return self._call_ollama_general(question, conversation_history)
+            except Exception as e:
+                return (
+                    f"Could not connect to local Ollama instance ({str(e)}).\n\n"
+                    "Ensure Ollama is running (`ollama serve`) and the model is downloaded (`ollama pull llama3`)."
+                )
+
+        return (
+            "You are currently in **General AI Chat** mode.\n\n"
+            "An active LLM provider (Google Gemini, OpenAI, or Ollama) is required for general conversational AI. "
+            "Please configure your API key in **Model & Settings** to get started."
+        )
 
     def _build_context_prompt(self, retrieved_passages: List[Dict[str, Any]]) -> str:
         context_parts = []
@@ -197,6 +266,106 @@ Answer:"""
         answer = data.get("message", {}).get("content", "").strip()
         return self._validate_answer(answer, retrieved_passages)
 
+    def _call_gemini_general(
+        self,
+        question: str,
+        conversation_history: List[Dict[str, str]],
+        api_key: str
+    ) -> str:
+        history_parts = []
+        if conversation_history:
+            for turn in conversation_history[-6:]:
+                role = "user" if turn["role"] == "user" else "model"
+                history_parts.append({
+                    "role": role,
+                    "parts": [{"text": turn["content"]}]
+                })
+
+        history_parts.append({
+            "role": "user",
+            "parts": [{"text": question}]
+        })
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={api_key}"
+        payload = {
+            "systemInstruction": {
+                "parts": [{
+                    "text": (
+                        "You are DocuQuery Assistant, a knowledgeable, clear, and helpful AI assistant. "
+                        "Answer the user's questions informatively and politely."
+                    )
+                }]
+            },
+            "contents": history_parts,
+            "generationConfig": {
+                "temperature": 0.7,
+                "maxOutputTokens": 1024
+            }
+        }
+
+        resp = requests.post(url, json=payload, timeout=25.0)
+        resp.raise_for_status()
+        data = resp.json()
+        candidates = data.get("candidates", [])
+        if candidates:
+            return candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+        return "I was unable to generate an answer at this time."
+
+    def _call_openai_general(
+        self,
+        question: str,
+        conversation_history: List[Dict[str, str]],
+        api_key: str
+    ) -> str:
+        messages = [{
+            "role": "system",
+            "content": "You are DocuQuery Assistant, a knowledgeable, clear, and helpful AI assistant."
+        }]
+        for turn in conversation_history[-6:]:
+            messages.append({"role": turn["role"], "content": turn["content"]})
+        messages.append({"role": "user", "content": question})
+
+        url = "https://api.openai.com/v1/chat/completions"
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "model": settings.openai_model,
+            "messages": messages,
+            "temperature": 0.7,
+            "max_tokens": 1024
+        }
+        resp = requests.post(url, headers=headers, json=payload, timeout=25.0)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["choices"][0]["message"]["content"].strip()
+
+    def _call_ollama_general(
+        self,
+        question: str,
+        conversation_history: List[Dict[str, str]]
+    ) -> str:
+        messages = [{
+            "role": "system",
+            "content": "You are DocuQuery Assistant, a knowledgeable, clear, and helpful AI assistant."
+        }]
+        for turn in conversation_history[-6:]:
+            messages.append({"role": turn["role"], "content": turn["content"]})
+        messages.append({"role": "user", "content": question})
+
+        url = f"{settings.ollama_base_url.rstrip('/')}/api/chat"
+        payload = {
+            "model": settings.ollama_model,
+            "messages": messages,
+            "stream": False,
+            "options": {"temperature": 0.7}
+        }
+        resp = requests.post(url, json=payload, timeout=25.0)
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("message", {}).get("content", "").strip()
+
     def _local_extractive_answer(
         self,
         question: str,
@@ -215,49 +384,70 @@ Answer:"""
             "what", "is", "the", "in", "of", "and", "a", "to", "for", "on", "with", "as",
             "at", "by", "this", "that", "it", "from", "are", "was", "were", "be", "been",
             "how", "why", "when", "where", "who", "which", "can", "could", "should", "would",
-            "do", "does", "did", "tell", "me", "about", "explain", "describe", "list"
+            "do", "does", "did", "tell", "me", "about", "explain", "describe", "list", "give"
         }
         
         q_tokens = [w.lower() for w in re.findall(r"\b\w{2,}\b", question) if w.lower() not in stopwords]
         if not q_tokens:
             q_tokens = [w.lower() for w in re.findall(r"\b\w+\b", question)]
 
+        # Generate stem/root forms to match inflections (tables -> table, created -> create)
+        q_stems = set()
+        for t in q_tokens:
+            q_stems.add(t)
+            for suff in ("ies", "es", "s", "ed", "ing", "tion", "tions"):
+                if t.endswith(suff) and len(t) > len(suff) + 2:
+                    q_stems.add(t[:-len(suff)])
+
         matching_sentences: List[tuple[float, str, int]] = []
 
         for p_idx, p in enumerate(retrieved_passages, 1):
             text = p["text"]
-            raw_sentences = re.split(r'(?<=[.!?])\s+|\n+', text)
+            # Split on sentence boundaries, newlines, semicolons or double breaks
+            raw_sentences = re.split(r'(?<=[.!?;\n])\s+|\n{2,}', text)
             for s in raw_sentences:
-                cleaned_s = s.strip()
-                if len(cleaned_s) < 15:
+                cleaned_s = " ".join(s.strip().split())
+                if len(cleaned_s) < 12:
                     continue
                 s_lower = cleaned_s.lower()
                 s_tokens = set(re.findall(r"\b\w{2,}\b", s_lower))
-                
+                s_stems = set()
+                for st in s_tokens:
+                    s_stems.add(st)
+                    for suff in ("ies", "es", "s", "ed", "ing", "tion", "tions"):
+                        if st.endswith(suff) and len(st) > len(suff) + 2:
+                            s_stems.add(st[:-len(suff)])
+
                 overlap = sum(1 for token in q_tokens if token in s_tokens)
+                stem_overlap = sum(1 for st in q_stems if st in s_stems)
+                total_overlap = max(overlap, stem_overlap)
+
                 chunk_score = p.get("relevance_score", 0.5)
-                sentence_score = (overlap / max(1, len(q_tokens))) * 0.7 + chunk_score * 0.3
-                
-                if overlap > 0:
+                sentence_score = (total_overlap / max(1, len(q_tokens))) * 0.7 + chunk_score * 0.3
+
+                if total_overlap > 0:
                     matching_sentences.append((sentence_score, cleaned_s, p_idx))
 
         if not matching_sentences:
+            # Fallback for overview/summarization questions when chunk has high relevance
+            if retrieved_passages and retrieved_passages[0].get("relevance_score", 0) >= 0.28:
+                first_text = retrieved_passages[0]["text"].strip()
+                sample_lines = [l.strip() for l in first_text.splitlines() if len(l.strip()) > 20][:3]
+                if sample_lines:
+                    return "Based on the uploaded documents:\n\n" + "\n\n".join([f"• {line} [1]" for line in sample_lines])
             return ANSWER_NOT_FOUND
 
         matching_sentences.sort(key=lambda x: x[0], reverse=True)
         top_sentences = matching_sentences[:4]
 
-        if top_sentences[0][0] < 0.25:
-            return ANSWER_NOT_FOUND
-
         lines = []
         seen_texts = set()
         for score, sent, p_idx in top_sentences:
-            normalized = sent.lower()
+            normalized = sent.lower()[:60]
             if normalized in seen_texts:
                 continue
             seen_texts.add(normalized)
-            lines.append(f"• {sent} [{p_idx}]")
+            lines.append(f"- {sent} [{p_idx}]")
 
         if not lines:
             return ANSWER_NOT_FOUND

@@ -26,6 +26,7 @@ def init_db():
             CREATE TABLE IF NOT EXISTS conversations (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,
+                mode TEXT DEFAULT 'document_qa',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             )
@@ -38,10 +39,21 @@ def init_db():
                 conversation_id TEXT NOT NULL,
                 role TEXT NOT NULL CHECK(role IN ('user', 'assistant')),
                 content TEXT NOT NULL,
+                mode TEXT DEFAULT 'document_qa',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (conversation_id) REFERENCES conversations(id) ON DELETE CASCADE
             )
         """)
+
+        # Migration: ensure mode column exists in pre-existing tables
+        try:
+            cursor.execute("ALTER TABLE conversations ADD COLUMN mode TEXT DEFAULT 'document_qa'")
+        except Exception:
+            pass
+        try:
+            cursor.execute("ALTER TABLE messages ADD COLUMN mode TEXT DEFAULT 'document_qa'")
+        except Exception:
+            pass
         
         # Citations table
         cursor.execute("""

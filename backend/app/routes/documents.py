@@ -48,6 +48,11 @@ def get_document(doc_id: str):
         raise HTTPException(status_code=404, detail="Document not found.")
     return doc
 
+@router.post("/{doc_id}/reindex", response_model=DocumentResponse)
+def reindex_document(doc_id: str):
+    """Re-indexes an existing document."""
+    return document_service.reindex_document(doc_id)
+
 @router.delete("/{doc_id}")
 def delete_document(doc_id: str):
     """Deletes document metadata, physical file, and vector store embeddings."""

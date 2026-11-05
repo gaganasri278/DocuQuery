@@ -11,7 +11,8 @@ import {
   CheckSquare,
   Square,
   X,
-  Sparkles
+  Sparkles,
+  RotateCcw
 } from 'lucide-react';
 import { DocumentItem } from '../types';
 
@@ -26,6 +27,7 @@ interface DocumentDrawerProps {
   onUploadFiles: (files: File[]) => Promise<void>;
   onLoadSamples: () => Promise<void>;
   onDeleteDocument: (docId: string) => Promise<void>;
+  onReindexDocument: (docId: string) => Promise<void>;
   isUploading: boolean;
 }
 
@@ -40,6 +42,7 @@ export const DocumentDrawer: React.FC<DocumentDrawerProps> = ({
   onUploadFiles,
   onLoadSamples,
   onDeleteDocument,
+  onReindexDocument,
   isUploading,
 }) => {
   const [dragActive, setDragActive] = useState(false);
@@ -270,13 +273,22 @@ export const DocumentDrawer: React.FC<DocumentDrawerProps> = ({
                         </div>
                       </div>
 
-                      <button
-                        onClick={() => onDeleteDocument(doc.id)}
-                        className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
-                        title="Delete document and remove embeddings"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <div className="flex items-center space-x-1">
+                        <button
+                          onClick={() => onReindexDocument(doc.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 dark:hover:bg-indigo-950/40 transition"
+                          title="Re-extract and re-index document"
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => onDeleteDocument(doc.id)}
+                          className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-950/40 transition"
+                          title="Delete document and remove embeddings"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
                     </div>
                   );
                 })}

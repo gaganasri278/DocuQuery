@@ -44,12 +44,13 @@ class Settings(BaseSettings):
     chunk_overlap: int = 120
     top_k_chunks: int = 4
     # Max cosine distance threshold (Chroma default is cosine distance;
-    # for cosine space, distance <= 0.65 or similarity >= 0.35 indicates relevant context)
-    relevance_distance_threshold: float = 0.65
+    # for cosine space, distance <= 0.78 allows genuine document questions
+    # while rejecting out-of-domain questions with distance > 0.85)
+    relevance_distance_threshold: float = 0.78
     
     # LLM Configuration
     # Supported: "gemini", "openai", "ollama", "local"
-    llm_provider: str = os.getenv("LLM_PROVIDER", "local")
+    llm_provider: str = os.getenv("LLM_PROVIDER", "gemini")
     gemini_api_key: str = os.getenv("GEMINI_API_KEY", "")
     gemini_model: str = os.getenv("GEMINI_MODEL", "gemini-1.5-flash")
     
@@ -67,7 +68,7 @@ class Settings(BaseSettings):
     cors_origins: list[str] = ["*"]
 
     model_config = {
-        "env_file": ".env",
+        "env_file": [str(BASE_DIR.parent / ".env"), str(BASE_DIR / ".env"), ".env"],
         "extra": "ignore"
     }
 

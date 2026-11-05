@@ -9,12 +9,12 @@ from app.models.schemas import (
 )
 
 class ConversationService:
-    def create_conversation(self, title: Optional[str] = "New Conversation") -> ConversationSummary:
+    def create_conversation(self, title: Optional[str] = "New Conversation", mode: str = "document_qa") -> ConversationSummary:
         conv_id = str(uuid.uuid4())
         with get_db() as conn:
             conn.execute(
-                "INSERT INTO conversations (id, title) VALUES (?, ?)",
-                (conv_id, title or "New Conversation")
+                "INSERT INTO conversations (id, title, mode) VALUES (?, ?, ?)",
+                (conv_id, title or "New Conversation", mode)
             )
             conn.commit()
 
@@ -25,21 +25,32 @@ class ConversationService:
         return ConversationSummary(
             id=row["id"],
             title=row["title"],
+            mode=row["mode"] if "mode" in row.keys() and row["mode"] else mode,
             created_at=str(row["created_at"]),
             updated_at=str(row["updated_at"]),
             message_count=0
         )
 
-    def list_conversations(self) -> List[ConversationSummary]:
+    def list_conversations(self, mode: Optional[str] = None) -> List[ConversationSummary]:
         with get_db() as conn:
             cursor = conn.cursor()
-            cursor.execute("""
-                SELECT c.*, COUNT(m.id) as message_count
-                FROM conversations c
-                LEFT JOIN messages m ON c.id = m.conversation_id
-                GROUP BY c.id
-                ORDER BY c.updated_at DESC
-            """)
+            if mode:
+                cursor.execute("""
+                    SELECT c.*, COUNT(m.id) as message_count
+                    FROM conversations c
+                    LEFT JOIN messages m ON c.id = m.conversation_id
+                    WHERE c.mode = ?
+                    GROUP BY c.id
+                    ORDER BY c.updated_at DESC
+                """, (mode,))
+            else:
+                cursor.execute("""
+                    SELECT c.*, COUNT(m.id) as message_count
+                    FROM conversations c
+                    LEFT JOIN messages m ON c.id = m.conversation_id
+                    GROUP BY c.id
+                    ORDER BY c.updated_at DESC
+                """)
             rows = cursor.fetchall()
 
         conversations = []
@@ -47,6 +58,7 @@ class ConversationService:
             conversations.append(ConversationSummary(
                 id=r["id"],
                 title=r["title"],
+                mode=r["mode"] if "mode" in r.keys() and r["mode"] else "document_qa",
                 created_at=str(r["created_at"]),
                 updated_at=str(r["updated_at"]),
                 message_count=r["message_count"]
@@ -90,18 +102,20 @@ class ConversationService:
                         relevance_score=c["relevance_score"]
                     ))
 
+                mode_val = m["mode"] if "mode" in m.keys() and m["mode"] else "document_qa"
                 messages.append(MessageResponse(
                     id=m["id"],
                     conversation_id=m["conversation_id"],
                     role=m["role"],
                     content=m["content"],
+                    mode=mode_val,
                     created_at=str(m["created_at"]),
                     citations=citations
                 ))
-
         return ConversationDetail(
             id=c_row["id"],
             title=c_row["title"],
+            mode=c_row["mode"] if "mode" in c_row.keys() and c_row["mode"] else "document_qa",
             created_at=str(c_row["created_at"]),
             updated_at=str(c_row["updated_at"]),
             messages=messages
@@ -123,14 +137,15 @@ class ConversationService:
         conv_id: str,
         role: str,
         content: str,
-        citations: List[CitationItem] = []
+        citations: List[CitationItem] = [],
+        mode: str = "document_qa"
     ) -> MessageResponse:
         msg_id = str(uuid.uuid4())
         with get_db() as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "INSERT INTO messages (id, conversation_id, role, content) VALUES (?, ?, ?, ?)",
-                (msg_id, conv_id, role, content)
+                "INSERT INTO messages (id, conversation_id, role, content, mode) VALUES (?, ?, ?, ?, ?)",
+                (msg_id, conv_id, role, content, mode)
             )
 
             # If user message is the first message in the conversation, update title
@@ -182,6 +197,7 @@ class ConversationService:
             conversation_id=m["conversation_id"],
             role=m["role"],
             content=m["content"],
+            mode=m["mode"] if "mode" in m.keys() and m["mode"] else mode,
             created_at=str(m["created_at"]),
             citations=citations
         )

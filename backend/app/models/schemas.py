@@ -27,10 +27,12 @@ class MessageResponse(BaseModel):
     content: str
     created_at: str
     citations: List[CitationItem] = []
+    mode: Optional[str] = "document_qa"
 
 class ConversationSummary(BaseModel):
     id: str
     title: str
+    mode: Optional[str] = "document_qa"
     created_at: str
     updated_at: str
     message_count: int
@@ -38,17 +40,20 @@ class ConversationSummary(BaseModel):
 class ConversationDetail(BaseModel):
     id: str
     title: str
+    mode: Optional[str] = "document_qa"
     created_at: str
     updated_at: str
     messages: List[MessageResponse]
 
 class CreateConversationRequest(BaseModel):
     title: Optional[str] = "New Conversation"
+    mode: Optional[str] = "document_qa"
 
 class ChatRequest(BaseModel):
     conversation_id: Optional[str] = None
     message: str = Field(..., min_length=1)
     document_ids: Optional[List[str]] = None
+    mode: Optional[str] = "document_qa"
 
 class ChatResponse(BaseModel):
     conversation_id: str

@@ -26,11 +26,13 @@ export interface ChatMessage {
   content: string;
   created_at: string;
   citations?: CitationItem[];
+  mode?: 'document_qa' | 'general_chat';
 }
 
 export interface ConversationSummary {
   id: string;
   title: string;
+  mode?: 'document_qa' | 'general_chat';
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -39,6 +41,7 @@ export interface ConversationSummary {
 export interface ConversationDetail {
   id: string;
   title: string;
+  mode?: 'document_qa' | 'general_chat';
   created_at: string;
   updated_at: string;
   messages: ChatMessage[];

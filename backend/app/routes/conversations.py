@@ -1,5 +1,5 @@
-from typing import List
-from fastapi import APIRouter, HTTPException
+from typing import List, Optional
+from fastapi import APIRouter, HTTPException, Query
 from app.models.schemas import (
     ConversationSummary,
     ConversationDetail,
@@ -10,14 +10,14 @@ from app.services.conversation_service import conversation_service
 router = APIRouter(prefix="/api/conversations", tags=["conversations"])
 
 @router.get("", response_model=List[ConversationSummary])
-def list_conversations():
-    """Lists all stored conversations."""
-    return conversation_service.list_conversations()
+def list_conversations(mode: Optional[str] = Query(None)):
+    """Lists all stored conversations, optionally filtered by mode."""
+    return conversation_service.list_conversations(mode=mode)
 
 @router.post("", response_model=ConversationSummary)
 def create_conversation(req: CreateConversationRequest):
     """Creates a new conversation session."""
-    return conversation_service.create_conversation(title=req.title)
+    return conversation_service.create_conversation(title=req.title, mode=req.mode or "document_qa")
 
 @router.get("/{conv_id}", response_model=ConversationDetail)
 def get_conversation(conv_id: str):

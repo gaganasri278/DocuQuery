@@ -189,4 +189,54 @@ class DocumentService:
             conn.commit()
             return True
 
+    def reindex_document(self, doc_id: str) -> DocumentResponse:
+        """Re-extracts, re-chunks, and re-indexes an existing document."""
+        with get_db() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM documents WHERE id = ?", (doc_id,))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(status_code=404, detail="Document not found.")
+
+        file_path = Path(row["file_path"])
+        if not file_path.exists():
+            raise HTTPException(status_code=404, detail="Underlying document file not found on disk.")
+
+        # Clear existing Chroma chunks
+        vector_store.delete_document(doc_id)
+
+        try:
+            extracted_units = DocumentExtractor.extract(file_path)
+            chunks = self.chunker.chunk_document(doc_id=doc_id, filename=row["filename"], units=extracted_units)
+            if not chunks:
+                raise ExtractionError("No meaningful chunks could be created from this document.")
+
+            vector_store.add_chunks(chunks)
+
+            with get_db() as conn:
+                conn.execute(
+                    """
+                    UPDATE documents
+                    SET status = 'ready', chunk_count = ?, error_message = NULL
+                    WHERE id = ?
+                    """,
+                    (len(chunks), doc_id)
+                )
+                conn.commit()
+
+            return self.get_document(doc_id)
+        except Exception as e:
+            error_msg = str(e)
+            with get_db() as conn:
+                conn.execute(
+                    """
+                    UPDATE documents
+                    SET status = 'failed', error_message = ?
+                    WHERE id = ?
+                    """,
+                    (error_msg, doc_id)
+                )
+                conn.commit()
+            raise HTTPException(status_code=422, detail=f"Reindexing failed: {error_msg}")
+
 document_service = DocumentService()

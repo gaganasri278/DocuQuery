@@ -77,3 +77,29 @@ def test_load_sample_documents():
         assert s.status == "ready"
         assert s.chunk_count > 0
         delete_document(s.id)
+
+def test_dual_mode_and_reindex():
+    # 1. Test separate conversation histories per mode
+    doc_conv = create_conversation(CreateConversationRequest(title="Doc Conv", mode="document_qa"))
+    gen_conv = create_conversation(CreateConversationRequest(title="Gen Conv", mode="general_chat"))
+
+    doc_list = list_conversations(mode="document_qa")
+    gen_list = list_conversations(mode="general_chat")
+
+    assert any(c.id == doc_conv.id for c in doc_list)
+    assert not any(c.id == gen_conv.id for c in doc_list)
+    assert any(c.id == gen_conv.id for c in gen_list)
+    assert not any(c.id == doc_conv.id for c in gen_list)
+
+    # 2. Test general chat response
+    gen_resp = chat(ChatRequest(
+        conversation_id=gen_conv.id,
+        message="Explain database indexing in simple terms",
+        mode="general_chat"
+    ))
+    assert gen_resp.assistant_message.mode == "general_chat"
+    assert len(gen_resp.assistant_message.citations) == 0
+
+    # 3. Cleanup
+    delete_conversation(doc_conv.id)
+    delete_conversation(gen_conv.id)

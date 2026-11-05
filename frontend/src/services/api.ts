@@ -46,18 +46,27 @@ export const api = {
     if (!res.ok) throw new Error('Failed to delete document');
   },
 
+  async reindexDocument(docId: string): Promise<DocumentItem> {
+    const res = await fetch(`${API_BASE}/documents/${docId}/reindex`, {
+      method: 'POST',
+    });
+    if (!res.ok) throw new Error('Failed to reindex document');
+    return res.json();
+  },
+
   // Conversations
-  async listConversations(): Promise<ConversationSummary[]> {
-    const res = await fetch(`${API_BASE}/conversations`);
+  async listConversations(mode?: 'document_qa' | 'general_chat'): Promise<ConversationSummary[]> {
+    const url = mode ? `${API_BASE}/conversations?mode=${mode}` : `${API_BASE}/conversations`;
+    const res = await fetch(url);
     if (!res.ok) throw new Error('Failed to load conversations');
     return res.json();
   },
 
-  async createConversation(title?: string): Promise<ConversationSummary> {
+  async createConversation(title?: string, mode: 'document_qa' | 'general_chat' = 'document_qa'): Promise<ConversationSummary> {
     const res = await fetch(`${API_BASE}/conversations`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ title }),
+      body: JSON.stringify({ title, mode }),
     });
     if (!res.ok) throw new Error('Failed to create conversation');
     return res.json();
@@ -80,7 +89,8 @@ export const api = {
   async sendMessage(
     conversationId: string | null,
     message: string,
-    documentIds?: string[]
+    documentIds?: string[],
+    mode: 'document_qa' | 'general_chat' = 'document_qa'
   ): Promise<{ conversation_id: string; user_message: ChatMessage; assistant_message: ChatMessage }> {
     const res = await fetch(`${API_BASE}/chat`, {
       method: 'POST',
@@ -89,6 +99,7 @@ export const api = {
         conversation_id: conversationId,
         message,
         document_ids: documentIds && documentIds.length > 0 ? documentIds : undefined,
+        mode,
       }),
     });
     if (!res.ok) {

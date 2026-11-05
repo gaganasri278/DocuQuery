@@ -28,6 +28,10 @@ export const App: React.FC = () => {
   const [documents, setDocuments] = useState<DocumentItem[]>([]);
   const [selectedDocIds, setSelectedDocIds] = useState<string[]>([]);
   const [systemSettings, setSystemSettings] = useState<SystemSettings | null>(null);
+  const [chatMode, setChatMode] = useState<'document_qa' | 'general_chat'>(() => {
+    const savedMode = localStorage.getItem('docuquery_mode');
+    return savedMode === 'general_chat' ? 'general_chat' : 'document_qa';
+  });
 
   // UI Drawer / Modal states
   const [isDocDrawerOpen, setIsDocDrawerOpen] = useState<boolean>(false);
@@ -63,12 +67,43 @@ export const App: React.FC = () => {
       setConversations(convs);
       setSystemSettings(settings);
 
-      // If conversations exist, load the most recent one
-      if (convs.length > 0) {
-        loadConversation(convs[0].id);
+      // If conversations exist matching current mode, load the most recent one
+      const matching = convs.filter(c => (c.mode || 'document_qa') === chatMode);
+      if (matching.length > 0) {
+        loadConversation(matching[0].id);
       }
     } catch (err) {
       console.error('Failed to load initial data:', err);
+    }
+  };
+
+  const handleModeChange = (newMode: 'document_qa' | 'general_chat') => {
+    setChatMode(newMode);
+    localStorage.setItem('docuquery_mode', newMode);
+
+    // Switch to first conversation matching the new mode, or open a clean new chat
+    const matching = conversations.filter(c => (c.mode || 'document_qa') === newMode);
+    if (matching.length > 0) {
+      loadConversation(matching[0].id);
+    } else {
+      handleNewChat();
+    }
+  };
+
+  const handleReindexDocument = async (docId: string) => {
+    setIsUploading(true);
+    try {
+      await api.reindexDocument(docId);
+      const [updatedDocs, s] = await Promise.all([
+        api.listDocuments(),
+        api.getSettings()
+      ]);
+      setDocuments(updatedDocs);
+      setSystemSettings(s);
+    } catch (err: any) {
+      alert(`Re-indexing failed: ${err.message || 'Unknown error'}`);
+    } finally {
+      setIsUploading(false);
     }
   };
 
@@ -120,6 +155,7 @@ export const App: React.FC = () => {
       conversation_id: activeConvId || '',
       role: 'user',
       content: text,
+      mode: chatMode,
       created_at: new Date().toISOString(),
     };
     setMessages(prev => [...prev, tempUserMsg]);
@@ -128,7 +164,8 @@ export const App: React.FC = () => {
       const res = await api.sendMessage(
         activeConvId,
         text,
-        selectedDocIds.length > 0 ? selectedDocIds : undefined
+        selectedDocIds.length > 0 ? selectedDocIds : undefined,
+        chatMode
       );
 
       // Update active conversation ID
@@ -234,6 +271,8 @@ export const App: React.FC = () => {
         docCount={documents.length}
         darkMode={darkMode}
         onToggleDarkMode={() => setDarkMode(!darkMode)}
+        chatMode={chatMode}
+        onModeChange={handleModeChange}
       />
 
       {/* Main Chat Interface */}
@@ -247,6 +286,8 @@ export const App: React.FC = () => {
         totalDocCount={documents.length}
         onOpenDocuments={() => setIsDocDrawerOpen(true)}
         activeConvTitle={activeConv ? activeConv.title : 'New Chat'}
+        chatMode={chatMode}
+        onModeChange={handleModeChange}
       />
 
       {/* Document Management Drawer */}
@@ -261,6 +302,7 @@ export const App: React.FC = () => {
         onUploadFiles={handleUploadFiles}
         onLoadSamples={handleLoadSamples}
         onDeleteDocument={handleDeleteDocument}
+        onReindexDocument={handleReindexDocument}
         isUploading={isUploading}
       />
 
