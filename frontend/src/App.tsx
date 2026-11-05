@@ -112,6 +112,10 @@ export const App: React.FC = () => {
     try {
       const detail = await api.getConversation(convId);
       setMessages(detail.messages);
+      if (detail.mode && (detail.mode === 'document_qa' || detail.mode === 'general_chat')) {
+        setChatMode(detail.mode);
+        localStorage.setItem('docuquery_mode', detail.mode);
+      }
     } catch (err) {
       console.error('Failed to load conversation messages:', err);
     }

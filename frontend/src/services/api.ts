@@ -86,12 +86,35 @@ export const api = {
   },
 
   // Chat
+  async sendGeneralChatMessage(
+    conversationId: string | null,
+    message: string
+  ): Promise<{ conversation_id: string; user_message: ChatMessage; assistant_message: ChatMessage }> {
+    const res = await fetch(`${API_BASE}/chat/general`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conversation_id: conversationId,
+        message,
+      }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ detail: 'Failed to send general chat message' }));
+      throw new Error(err.detail || 'Failed to send general chat message');
+    }
+    return res.json();
+  },
+
   async sendMessage(
     conversationId: string | null,
     message: string,
     documentIds?: string[],
     mode: 'document_qa' | 'general_chat' = 'document_qa'
   ): Promise<{ conversation_id: string; user_message: ChatMessage; assistant_message: ChatMessage }> {
+    if (mode === 'general_chat') {
+      return this.sendGeneralChatMessage(conversationId, message);
+    }
+
     const res = await fetch(`${API_BASE}/chat`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -99,7 +122,7 @@ export const api = {
         conversation_id: conversationId,
         message,
         document_ids: documentIds && documentIds.length > 0 ? documentIds : undefined,
-        mode,
+        mode: 'document_qa',
       }),
     });
     if (!res.ok) {

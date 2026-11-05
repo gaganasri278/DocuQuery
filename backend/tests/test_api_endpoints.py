@@ -3,9 +3,9 @@ from pathlib import Path
 from fastapi import UploadFile
 from app.routes.documents import upload_documents, list_documents, delete_document, get_document, load_sample_documents
 from app.routes.conversations import create_conversation, list_conversations, get_conversation, delete_conversation
-from app.routes.chat import chat
+from app.routes.chat import chat, general_chat
 from app.routes.settings import get_settings, update_settings
-from app.models.schemas import CreateConversationRequest, ChatRequest, UpdateSettingsRequest
+from app.models.schemas import CreateConversationRequest, ChatRequest, GeneralChatRequest, UpdateSettingsRequest
 from app.database.connection import init_db
 
 SAMPLES_DIR = Path(__file__).resolve().parent.parent / "test_samples"
@@ -103,3 +103,11 @@ def test_dual_mode_and_reindex():
     # 3. Cleanup
     delete_conversation(doc_conv.id)
     delete_conversation(gen_conv.id)
+
+def test_dedicated_general_chat_endpoint():
+    resp = general_chat(GeneralChatRequest(message="What is artificial intelligence?"))
+    assert resp.conversation_id is not None
+    assert resp.assistant_message.mode == "general_chat"
+    assert len(resp.assistant_message.citations) == 0
+    assert "Answer not found in the uploaded documents." not in resp.assistant_message.content
+    delete_conversation(resp.conversation_id)

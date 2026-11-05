@@ -55,6 +55,10 @@ class ChatRequest(BaseModel):
     document_ids: Optional[List[str]] = None
     mode: Optional[str] = "document_qa"
 
+class GeneralChatRequest(BaseModel):
+    conversation_id: Optional[str] = None
+    message: str = Field(..., min_length=1)
+
 class ChatResponse(BaseModel):
     conversation_id: str
     user_message: MessageResponse
