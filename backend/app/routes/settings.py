@@ -34,13 +34,42 @@ def get_settings():
         total_chunks=vector_store.count()
     )
 
+def _persist_env_var(key: str, value: str):
+    env_paths = [
+        settings.base_dir / ".env",
+        settings.base_dir.parent / ".env"
+    ]
+    for p in env_paths:
+        try:
+            if p.exists():
+                lines = p.read_text(encoding="utf-8").splitlines()
+                updated = False
+                new_lines = []
+                for line in lines:
+                    if line.startswith(f"{key}=") or line.startswith(f"#{key}="):
+                        new_lines.append(f"{key}={value}")
+                        updated = True
+                    else:
+                        new_lines.append(line)
+                if not updated:
+                    new_lines.append(f"{key}={value}")
+                p.write_text("\n".join(new_lines) + "\n", encoding="utf-8")
+        except Exception as e:
+            print(f"[Warning] Could not persist {key} to {p}: {e}")
+
 @router.post("", response_model=SettingsResponse)
 def update_settings(req: UpdateSettingsRequest):
     if req.llm_provider:
         settings.llm_provider = req.llm_provider
+        os.environ["LLM_PROVIDER"] = req.llm_provider
+        _persist_env_var("LLM_PROVIDER", req.llm_provider)
     if req.gemini_api_key is not None:
         settings.gemini_api_key = req.gemini_api_key
+        os.environ["GEMINI_API_KEY"] = req.gemini_api_key
+        _persist_env_var("GEMINI_API_KEY", req.gemini_api_key)
     if req.openai_api_key is not None:
         settings.openai_api_key = req.openai_api_key
+        os.environ["OPENAI_API_KEY"] = req.openai_api_key
+        _persist_env_var("OPENAI_API_KEY", req.openai_api_key)
 
     return get_settings()

@@ -54,7 +54,8 @@ class LLMProvider:
                 try:
                     return self._call_gemini(question, retrieved_passages, conversation_history, gemini_key)
                 except Exception as e:
-                    print(f"[LLM Warning] Gemini call failed ({e}), falling back to extractive engine.")
+                    safe_e = str(e).replace(gemini_key, "[REDACTED]") if gemini_key else str(e)
+                    print(f"[LLM Warning] Gemini call failed ({safe_e}), falling back to extractive engine.")
                     return self._local_extractive_answer(question, retrieved_passages)
             else:
                 print("[LLM Info] Gemini provider active but GEMINI_API_KEY is not set. Using local high-precision extractive engine.")
@@ -106,7 +107,10 @@ class LLMProvider:
                 try:
                     return self._call_gemini_general(question, conversation_history, gemini_key)
                 except Exception as e:
-                    return f"[Gemini Error]: Unable to complete request ({str(e)}). Please verify your GEMINI_API_KEY."
+                    err_msg = str(e)
+                    if gemini_key:
+                        err_msg = err_msg.replace(gemini_key, "[REDACTED]")
+                    return f"[Gemini Error]: Unable to complete request ({err_msg}). Please verify your GEMINI_API_KEY."
             else:
                 return (
                     "You are currently in **General AI Chat** mode.\n\n"
@@ -157,6 +161,70 @@ class LLMProvider:
 
         return "<untrusted_document_context>\n" + "\n\n".join(context_parts) + "\n</untrusted_document_context>"
 
+    def _call_gemini_api(
+        self,
+        payload: dict,
+        api_key: str
+    ) -> str:
+        """
+        Executes a Gemini generateContent request with multi-model fallback.
+        Prioritizes settings.gemini_model (default: gemini-3.8-flash).
+        If the primary model experiences high demand (503), timeout, rate limit (429), or 404,
+        it automatically fails over to stable alternatives (gemini-3.5-flash, gemini-3.1-flash-lite).
+        Uses x-goog-api-key HTTP header so the API key is never exposed in URLs, query strings, or error traces.
+        """
+        primary = settings.gemini_model or "gemini-3.8-flash"
+        candidates = [primary, "gemini-3.1-flash-lite", "gemini-3.5-flash", "gemini-3.5-flash-lite"]
+        ordered_models = []
+        seen = set()
+        for m in candidates:
+            clean = m.replace("models/", "").strip()
+            if clean and clean not in seen:
+                seen.add(clean)
+                ordered_models.append(clean)
+
+        headers = {
+            "Content-Type": "application/json",
+            "x-goog-api-key": api_key.strip()
+        }
+
+        last_err = None
+        for idx, model_name in enumerate(ordered_models):
+            url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent"
+            # For candidate models before the final one, use 5.0s timeout so slow or throttled models fail over instantly
+            timeout = 5.0 if idx < len(ordered_models) - 1 else 20.0
+            try:
+                resp = requests.post(url, headers=headers, json=payload, timeout=timeout)
+                if resp.status_code in (404, 429, 500, 503):
+                    print(f"[Gemini Notice] Model {model_name} returned HTTP {resp.status_code}. Trying fallback...")
+                    last_err = requests.HTTPError(f"HTTP {resp.status_code} on {model_name}", response=resp)
+                    continue
+                resp.raise_for_status()
+                data = resp.json()
+                candidates_list = data.get("candidates", [])
+                if candidates_list:
+                    parts = candidates_list[0].get("content", {}).get("parts", [])
+                    if parts and "text" in parts[0]:
+                        return parts[0]["text"].strip()
+                return ""
+            except (requests.Timeout, requests.ConnectionError) as e:
+                print(f"[Gemini Notice] Model {model_name} timed out ({type(e).__name__}). Trying fallback...")
+                last_err = e
+                continue
+            except requests.HTTPError as e:
+                last_err = e
+                status_code = getattr(e.response, "status_code", None)
+                if status_code in (400, 401, 403):
+                    raise RuntimeError(f"Gemini API returned HTTP {status_code}. Please verify your API key.")
+                continue
+            except Exception as e:
+                last_err = e
+                continue
+
+        if last_err:
+            raise RuntimeError(f"All Gemini models were unavailable or timed out ({type(last_err).__name__}).")
+        raise RuntimeError("Failed to generate response from Gemini API.")
+
     def _call_gemini(
         self,
         question: str,
@@ -165,36 +233,41 @@ class LLMProvider:
         api_key: str
     ) -> str:
         context_text = self._build_context_prompt(retrieved_passages)
-        
-        history_text = ""
+
+        history_parts = []
         if conversation_history:
-            recent_turns = conversation_history[-4:]
-            formatted = [f"{turn['role'].upper()}: {turn['content']}" for turn in recent_turns]
-            history_text = "Previous Conversation Context:\n" + "\n".join(formatted) + "\n\n"
+            for turn in conversation_history[-4:]:
+                role = "user" if turn.get("role") == "user" else "model"
+                text = turn.get("content", "").strip()
+                if not text:
+                    continue
+                if history_parts and history_parts[-1]["role"] == role:
+                    history_parts[-1]["parts"][0]["text"] += f"\n\n{text}"
+                else:
+                    history_parts.append({"role": role, "parts": [{"text": text}]})
 
-        prompt = f"""{SYSTEM_PROMPT}
+        user_content = f"{context_text}\n\nUser Question: {question}\n\nAnswer:"
+        if history_parts and history_parts[-1]["role"] == "user":
+            history_parts[-1]["parts"][0]["text"] += f"\n\n{user_content}"
+        else:
+            history_parts.append({"role": "user", "parts": [{"text": user_content}]})
 
-{context_text}
+        while history_parts and history_parts[0]["role"] != "user":
+            history_parts.pop(0)
 
-{history_text}User Question: {question}
-
-Answer:"""
-
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={api_key}"
         payload = {
-            "contents": [{"parts": [{"text": prompt}]}],
+            "systemInstruction": {
+                "parts": [{"text": SYSTEM_PROMPT}]
+            },
+            "contents": history_parts,
             "generationConfig": {
                 "temperature": 0.1,
                 "maxOutputTokens": 1024
             }
         }
 
-        resp = requests.post(url, json=payload, timeout=25.0)
-        resp.raise_for_status()
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        if candidates:
-            answer = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+        answer = self._call_gemini_api(payload, api_key)
+        if answer:
             return self._validate_answer(answer, retrieved_passages)
         return ANSWER_NOT_FOUND
 
@@ -274,19 +347,24 @@ Answer:"""
     ) -> str:
         history_parts = []
         if conversation_history:
-            for turn in conversation_history[-6:]:
-                role = "user" if turn["role"] == "user" else "model"
-                history_parts.append({
-                    "role": role,
-                    "parts": [{"text": turn["content"]}]
-                })
+            for turn in conversation_history[-8:]:
+                role = "user" if turn.get("role") == "user" else "model"
+                text = turn.get("content", "").strip()
+                if not text:
+                    continue
+                if history_parts and history_parts[-1]["role"] == role:
+                    history_parts[-1]["parts"][0]["text"] += f"\n\n{text}"
+                else:
+                    history_parts.append({"role": role, "parts": [{"text": text}]})
 
-        history_parts.append({
-            "role": "user",
-            "parts": [{"text": question}]
-        })
+        if history_parts and history_parts[-1]["role"] == "user":
+            history_parts[-1]["parts"][0]["text"] += f"\n\n{question}"
+        else:
+            history_parts.append({"role": "user", "parts": [{"text": question}]})
 
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{settings.gemini_model}:generateContent?key={api_key}"
+        while history_parts and history_parts[0]["role"] != "user":
+            history_parts.pop(0)
+
         payload = {
             "systemInstruction": {
                 "parts": [{
@@ -303,12 +381,9 @@ Answer:"""
             }
         }
 
-        resp = requests.post(url, json=payload, timeout=25.0)
-        resp.raise_for_status()
-        data = resp.json()
-        candidates = data.get("candidates", [])
-        if candidates:
-            return candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "").strip()
+        answer = self._call_gemini_api(payload, api_key)
+        if answer:
+            return answer
         return "I was unable to generate an answer at this time."
 
     def _call_openai_general(

@@ -80,7 +80,7 @@ DocuQuery AI decouples document processing, semantic embeddings, vector indexing
 
 4. **Multiple AI Providers Supported**:
    - **Local Semantic Extractive Engine**: Works immediately out-of-the-box with **zero external API keys or network dependencies**.
-   - **Google Gemini**: Native API integration (`gemini-1.5-flash`).
+   - **Google Gemini**: Native API integration (`gemini-3.8-flash`, with automatic fallback to `gemini-3.5-flash` / `gemini-3.1-flash-lite`).
    - **OpenAI**: Native API integration (`gpt-4o-mini`, `gpt-4o`).
    - **Ollama**: Local open-source models (`llama3`, `mistral`).
 
@@ -313,7 +313,7 @@ You can switch providers dynamically in the **Settings Modal** in the UI or via 
 ### 2. Google Gemini
 - Set `LLM_PROVIDER=gemini`
 - Set `GEMINI_API_KEY=your_gemini_api_key`
-- Model default: `gemini-1.5-flash`
+- Model default: `gemini-3.8-flash`
 
 ### 3. OpenAI
 - Set `LLM_PROVIDER=openai`

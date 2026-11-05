@@ -95,7 +95,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
             >
               <option value="local">Local Semantic Extractive Engine (Zero API Key Required)</option>
-              <option value="gemini">Google Gemini (Gemini 1.5 Flash)</option>
+              <option value="gemini">Google Gemini (Gemini 3.8 Flash / 3.5 Flash)</option>
               <option value="openai">OpenAI (GPT-4o-mini)</option>
               <option value="ollama">Ollama Local LLM (Llama 3)</option>
             </select>
@@ -124,7 +124,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <Key className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 <input
                   type="password"
-                  placeholder={settings.has_gemini_key ? '••••••••••••••••••••' : 'Enter AIzaSy...'}
+                  placeholder={settings.has_gemini_key ? '••••••••••••••••••••' : 'Enter Gemini API Key'}
                   value={geminiKey}
                   onChange={(e) => setGeminiKey(e.target.value)}
                   className="w-full pl-9 pr-3.5 py-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-900 dark:text-slate-100 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500"
