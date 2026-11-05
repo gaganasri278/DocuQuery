@@ -1,0 +1,14 @@
+# Project Alpha Research Notes
+
+## Executive Summary
+Project Alpha evaluates hybrid retrieval architectures combining BM25 keyword matching with dense neural vector search. The objective is improving retrieval recall on specialized technical documentation.
+
+## Key Findings
+1. Hybrid retrieval achieved a 94.2% recall rate compared to 81.5% for pure keyword search.
+2. Embedding-based search handled semantic synonyms effectively (e.g., mapping 'payment schedule' to 'invoicing milestones').
+3. Strict grounding prompts reduced hallucination rates from 18.4% down to 0.5%.
+
+## Next Milestones
+- Milestone 1: Deploy ChromaDB on SSD storage by March 1st.
+- Milestone 2: Conduct user acceptance testing with 50 domain specialists.
+- Milestone 3: Implement streaming token generation in the React user interface.
